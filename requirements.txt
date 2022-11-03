@@ -1,0 +1,13 @@
+arrow>=1.1.1
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.4.1/en_core_web_sm-3.4.1.tar.gz
+flake8>3.8.0
+geopy>=2.1.0
+hdbscan-0.8.29
+umap-learn-0.5.3
+
+networkx>=2.6.1
+scikit-learn>=0.24.2
+simplejson>=3.17.2
+spacy>=3.4.0
+streamlit>=1.14.0
+
