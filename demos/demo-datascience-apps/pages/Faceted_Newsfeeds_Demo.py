@@ -206,7 +206,7 @@ def render():
 
 
     if len(session_state['feed_items']) > 0:
-        st.write("# Overview of search results")
+        st.write("# Overview")
         facet, selected = create_overview(session_state)
 
         if facet == FACETS.DATE_FACET:
@@ -228,7 +228,6 @@ def render():
 
 
 def create_overview(session_state):
-
     events = session_state["feed_items"].values()
     date_to_events = defaultdict(list)
     for e in events:
@@ -264,13 +263,13 @@ def create_overview(session_state):
         'lon' : [float(g["lon"]) for g in geolocs]
     })
 
-    loc_col.write("### Countries")
+    loc_col.write("### Locations")
     all_locs = loc_col.checkbox("all / clear", key="all-locs")
     for c, c_events in sorted(country_to_events.items(), key=lambda x: len(x[1]), reverse=True):
         selected = loc_col.checkbox(
             f"{c} ({len(c_events)} events)",
             value=all_locs,
-            key=str(idx)
+            key=f'locations-checkbox-{idx}'
         )
         idx += 1
         if selected:
@@ -285,7 +284,7 @@ def create_overview(session_state):
         selected = people_col.checkbox(
             f"{sf} ({len(e_events)} events)",
             value=all_people,
-            key=str(idx)
+            key=f'people-checkbox-{idx}'
         )
         idx += 1
         if selected:
@@ -298,7 +297,7 @@ def create_overview(session_state):
         selected = org_col.checkbox(
             f"{sf} ({len(e_events)} events)",
             value=all_orgs,
-            key=str(idx)
+            key=f'org-checkbox-{idx}'
         )
         idx += 1
         if selected:
@@ -338,6 +337,7 @@ def render_chronological_view(session_state, selected_dates):
     for d in selected_dates:
         st.write(f"## Events on {format_date(d)}")
         for i, e in enumerate(date_to_events[d]):
+            render_event_card(e, session_state)
             render_event(e, session_state)
 
         st.markdown("----")
@@ -358,6 +358,7 @@ def render_location_view(session_state, selected_countries):
         c_events = country_to_events[c]
         st.write(f"## Events in {c}")
         for i, e in enumerate(c_events):
+            render_event_card(e, session_state)
             render_event(e, session_state)
 
         st.markdown("----")
@@ -371,6 +372,7 @@ def render_people_view(session_state, selected_people):
         st.write(f"## Events involving {sf}")
         st.write(f"Entity: {eid}")
         for i, e in enumerate(e_events):
+            render_event_card(e, session_state)
             render_event(e, session_state)
 
 
@@ -405,10 +407,24 @@ def group_by_entity(items, entity_field):
             entity_to_items[key].append(item)
     return entity_to_items
 
-# TODO: rich signals card
-def render_event_card(event, session_state):
 
-    pass
+def render_event_card(event, session_state):
+    st.write(f'#### {event["title"]}')
+    st.write(f'Summary: {event["description"]}')
+    cols = st.columns(6)
+    cols[0].write('### People')
+    for entity in event['people']:
+        cols[0].write(entity['surface_form'])
+    cols[1].write('### Locations')
+    for entity in event['locations']:
+        cols[1].write(entity['surface_form'])
+    cols[2].write('### Organisations')
+    for entity in event['organisations']:
+        cols[2].write(entity['surface_form'])
+
+    st.write('## Stories')
+    for story in event['stories']:
+        st.markdown(f'[{story["title"]}]({story["links"]["permalink"]})')
 
 
 def render_event(

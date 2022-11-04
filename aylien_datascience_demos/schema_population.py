@@ -13,7 +13,6 @@ from time import sleep
 geolocator = Nominatim(timeout=2, user_agent="story_locations")
 
 
-# TODO: switch to HDBSCAN
 def cluster_items(items, get_text, eps=0.99, min_samples=2):
     vectorizer = TfidfVectorizer(stop_words="english")
     texts = [get_text(item) for item in items]
