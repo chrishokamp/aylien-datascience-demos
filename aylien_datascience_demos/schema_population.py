@@ -13,11 +13,11 @@ from time import sleep
 geolocator = Nominatim(timeout=2, user_agent="story_locations")
 
 
-def cluster_items(items, get_text, eps=0.99, min_samples=2):
+def cluster_items(items, get_text, eps, min_samples):
     vectorizer = TfidfVectorizer(stop_words="english")
     texts = [get_text(item) for item in items]
     X = vectorizer.fit_transform(texts)
-    clusterer = DBSCAN(eps=eps, min_samples=min_samples)
+    clusterer = DBSCAN(eps=eps, min_samples=min_samples, metric='cosine')
     labels = clusterer.fit_predict(X)
 
     label_to_items = defaultdict(list)
@@ -38,11 +38,11 @@ def pick_event_title(stories):
         if s["title"].strip() != "":
             labels.append(1)
             texts.append(s["title"])
-        if s["body"].strip() != "":
+        if len(s["body"].strip()):
             labels.append(0)
-            texts.append(s["body"])
+            texts.append(str(s["body_doc"]).sents[0])
 
-    vectorizer = TfidfVectorizer(stop_words="english", lowercase=True)
+    vectorizer = TfidfVectorizer(stop_words="english")
     X = vectorizer.fit_transform(texts)
     ranked_indices = textrank(X)
     cluster_title = None

@@ -93,7 +93,7 @@ def get_session_state():
         nlp = spacy.load("en_core_web_sm")
         # TODO: for online views, let user get more stories
         query_template = {
-          "text": "Mu variant",
+          "text": "Takeoff",
           "per_page": 25,
           "published_at.start": "NOW-7DAYS",
           "sort_by": "relevance",
@@ -157,9 +157,9 @@ def render():
             s["body_doc"] = session_state["local_nlp"](s["body"])
         clusters = schema_population.cluster_items(
             stories,
-            get_text=(lambda x: f"{str(x['title_doc'][:64])} {str(x['body_doc'][:256])}"),
+            get_text=(lambda x: f"{str(x['title_doc'])} {str(list(x['body_doc'].sents)[:3])}"),
             min_samples=2,
-            eps=1.,
+            eps=0.75
         )
         events = [schema_population.stories_to_event(c) for c in clusters]
         id_to_geolocs, sf_to_geoloc =\
@@ -176,21 +176,6 @@ def render():
 
     session_state['current_newsapi_query'] = json.loads(query)
 
-    # # Manually Add Item
-    # manually_added_text = st.sidebar.text_area(
-    #     'Add Item text',
-    #     '',
-    #     height=100
-    # )
-    # if st.sidebar.button('Add Item', key='add_item_manually'):
-    #     # make a fake item
-    #     story = story_from_text(manually_added_text)
-    #     id = item_id(story)
-    #     session_state['feed_items'][id] = story
-    #     trigger_rerun()
-    #
-    # st.sidebar.markdown('----')
-
     ###############
     # END SIDEBAR #
     ###############
@@ -203,7 +188,6 @@ def render():
     # Map items into views (Events, Entities, ... #
     # ("Event" is another type of transient Item) #
     ###############################################
-
 
     if len(session_state['feed_items']) > 0:
         st.write("# Overview")
@@ -338,7 +322,6 @@ def render_chronological_view(session_state, selected_dates):
         st.write(f"## Events on {format_date(d)}")
         for i, e in enumerate(date_to_events[d]):
             render_event_card(e, session_state)
-            render_event(e, session_state)
 
         st.markdown("----")
 
@@ -359,7 +342,6 @@ def render_location_view(session_state, selected_countries):
         st.write(f"## Events in {c}")
         for i, e in enumerate(c_events):
             render_event_card(e, session_state)
-            render_event(e, session_state)
 
         st.markdown("----")
 
@@ -373,7 +355,6 @@ def render_people_view(session_state, selected_people):
         st.write(f"Entity: {eid}")
         for i, e in enumerate(e_events):
             render_event_card(e, session_state)
-            render_event(e, session_state)
 
 
 def render_organisations_view(session_state, selected_orgs):
@@ -384,7 +365,7 @@ def render_organisations_view(session_state, selected_orgs):
         st.write(f"## Events involving {sf}")
         st.write(f"{eid}")
         for i, e in enumerate(e_events):
-            render_event(e, session_state)
+            render_event_card(e, session_state)
 
 
 def group_by_country(items, id_to_geolocs):
@@ -409,8 +390,12 @@ def group_by_entity(items, entity_field):
 
 
 def render_event_card(event, session_state):
-    st.write(f'#### {event["title"]}')
-    st.write(f'Summary: {event["description"]}')
+    col1, col2 = st.columns(2)
+    col1.write(f'#### {event["title"]}')
+    col1.write(f'{event["description"]}')
+    col1.metric(
+        'Stories', len(event['stories'])
+    )
     cols = st.columns(6)
     cols[0].write('### People')
     for entity in event['people']:
@@ -422,9 +407,12 @@ def render_event_card(event, session_state):
     for entity in event['organisations']:
         cols[2].write(entity['surface_form'])
 
-    st.write('## Stories')
-    for story in event['stories']:
-        st.markdown(f'[{story["title"]}]({story["links"]["permalink"]})')
+    col1, col2 = st.columns(2)
+    with col1.expander('Stories'):
+        for story in event['stories']:
+            st.markdown(f'[{story["title"]}]({story["links"]["permalink"]})')
+
+    col1.markdown('-----')
 
 
 def render_event(
