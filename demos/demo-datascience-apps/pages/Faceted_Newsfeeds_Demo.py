@@ -41,6 +41,23 @@ st.set_page_config(
     initial_sidebar_state='auto')
 
 
+class Newsapi:
+    def __init__(self):
+        self.stories_cache = {}
+
+    def retrieve_stories(self, params, **kwargs):
+        key = json.dumps(params)
+        if key in self.stories_cache:
+            return self.stories_cache
+        else:
+            data = newsapi.retrieve_stories(params, **kwargs)
+            self.stories_cache[key] = data
+        return self.stories_cache[key]
+
+
+# TODO: cache resolved events, processing is expensive
+
+
 def hide_menu_and_footer():
     hide_streamlit_style = '''
     <style>
@@ -69,7 +86,7 @@ def story_from_text(text: str):
 def get_session_state():
     state = st.session_state
 
-    if not state.get('INIT', False):
+    if not state.get('INIT_FACETED_NEWSFEEDS_DEMO', False):
         # Initialize user state if session doesn't exist
         # Create a Tokenizer with the default settings for English
         # including punctuation rules and exceptions
@@ -88,7 +105,9 @@ def get_session_state():
         state['local_nlp'] = nlp
         state['current_newsapi_query'] = copy.deepcopy(query_template)
         state['feed_items'] = OrderedDict()
-    state['INIT'] = True
+
+        state['newsapi'] = Newsapi()
+    state['INIT_FACETED_NEWSFEEDS_DEMO'] = True
 
     return state
 
@@ -122,6 +141,7 @@ def render():
     st.sidebar.markdown('----')
 
     # Newsapi Query
+    # TODO: query cache with some data loaded up on startup
     query = st.sidebar.text_area(
         'NewsAPI Query',
         json.dumps(session_state['current_newsapi_query'], indent=2),
@@ -129,7 +149,9 @@ def render():
     )
     if st.sidebar.button('Populate Feed from Query', key='populate_feed_from_query'):
         query = session_state['current_newsapi_query']
-        stories = newsapi.retrieve_stories(params=query)
+        stories = session_state['newsapi'].retrieve_stories(
+            params=query
+        )
         for s in stories:
             s["title_doc"] = session_state["local_nlp"](s["title"])
             s["body_doc"] = session_state["local_nlp"](s["body"])
@@ -142,6 +164,8 @@ def render():
         events = [schema_population.stories_to_event(c) for c in clusters]
         id_to_geolocs, sf_to_geoloc =\
             schema_population.extract_geolocations(events)
+        # TODO: cache events for query, don't recompute
+        # TODO: assert events are json serializable
         for e in events:
             session_state["feed_items"][e["id"]] = e
         session_state["id_to_geolocs"] = id_to_geolocs
@@ -381,8 +405,9 @@ def group_by_entity(items, entity_field):
             entity_to_items[key].append(item)
     return entity_to_items
 
-
+# TODO: rich signals card
 def render_event_card(event, session_state):
+
     pass
 
 
@@ -398,9 +423,9 @@ def render_event(
     # st.markdown(f'#### {item["title"]}')
     # st.write(item["description"])
 
-    people_string = ", ".join([str(e["surface_form"]) for e in item["people"]])
-    loc_string = ", ".join([str(e["surface_form"]) for e in item["locations"]])
-    org_string = ", ".join([str(e["surface_form"]) for e in item["organisations"]])
+    people_string = 'PEOPLE: ' + ", ".join([str(e["surface_form"]) for e in item["people"]])
+    loc_string = 'LOCATIONS: ' + ", ".join([str(e["surface_form"]) for e in item["locations"]])
+    org_string = 'ORGS: ' + ", ".join([str(e["surface_form"]) for e in item["organisations"]])
     st.write(people_string)
     st.write(loc_string)
     st.write(org_string)
@@ -417,7 +442,6 @@ def render_event(
         f'<p><a style="color: #ffab03 !important;" href={s["links"]["permalink"]}>{s["title"]}</a></p>'
         for s in dedup_stories[:3]
     ])
-    st.write(titles_string)
     # attr_style = 'style="color: #7d7d7d"'
     attr_style = 'style="color: black"'
     components.html(

@@ -18,23 +18,7 @@ def get_session_state():
 
 
 def main():
-    session_state = get_session_state()
-    text_reverser = TextReverser()
-    counter = session_state["counter"]
-
     st.write("# Simple Streamlit Demo")
-
-    if st.button("Click Me"):
-        counter()
-    clicks = counter.count
-    st.write(
-        f"This button has been clicked {clicks} times in this session."
-    )
-
-    text = st.text_input("Enter text")
-    if st.button("Click to reverse text"):
-        new_text = text_reverser(text)
-        st.write(new_text)
 
 
 if __name__ == '__main__':

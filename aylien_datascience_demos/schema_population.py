@@ -97,11 +97,6 @@ def extract_frequent_entities(
     for s in stories:
         # note implicit schema match
         for text_field in ("title", "body"):
-            # doc = s[f"{text_field}_doc"]
-            # span_to_type = {}
-            # for e in doc.ents:
-            #     span = (e.start_char, e.end_char)
-            #     span_to_type[span] = e.label_
             for e in s['entities']:
                 all_types.update(e['types'])
                 if 'links' in e:
@@ -110,10 +105,8 @@ def extract_frequent_entities(
                         for m in sf['mentions']:
                             start = m['index']['start']
                             end = m['index']['end']
-                            # e_type = span_to_type.get(span)
                             e_types = set(e['types'])
                             if len(e_types.intersection(set(allowed_types))):
-                                # sf_text = str(s[text_field][start: end + 1])
                                 sf_text = str(s[text_field][start: end])
                                 id_to_sf_counts[eid][sf_text] += 1
                                 entity_ids.add(eid)
@@ -187,19 +180,14 @@ def stories_to_event(stories):
 
     locations = extract_frequent_entities(
         stories,
-        allowed_types=['Sovereign_state', 'Community', 'State_(polity)', 'U.S._state', 'Location', 'Country', 'Island_country', 'City'],
+        allowed_types=['Government', 'Local_government', 'Sovereign_state', 'Community', 'State_(polity)', 'U.S._state', 'Location', 'Country', 'Island_country', 'City'],
         max_num=5, min_ratio=0.4
     )
-    # {'Product_(business)', 'Software', 'Sovereign_state', 'Community', 'State_(polity)', 'Location', 'Country',
-    #
-    #  'Educational_organization'}
-    # {'Government', 'Sovereign_state', 'Community', 'State_(polity)', 'Location', 'U.S._state', 'Country', 'Human',
-    #  'Political_organisation', 'Island_country', 'Company', 'City', 'Organization', 'Corporation', 'Local_government'}
 
     organisations = extract_frequent_entities(
         stories,
         allowed_types=[
-            'Government', 'Local_government', 'Nonprofit_organization', 'Political_organisation'
+            'Nonprofit_organization',
             'Public_company', 'Company', 'Business', 'Organization', 'Brick_and_mortar'
         ],
         max_num=5, min_ratio=0.4)

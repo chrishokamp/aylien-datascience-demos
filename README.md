@@ -1,9 +1,19 @@
 # Aylien Datascience Demos
 
-This is a multi-page streamlit app containing example usecases for the Aylien NewsAPI. 
+This is a multi-page streamlit app containing demo apps built on top of the Aylien NewsAPI.
+
+This project is intended for data scientists using the Aylien NewsAPI, but also for anyone interested in
+
 For each of these demos, we provide a sample dataset that will allow them to run without a NewsAPI key. 
 
 Also check out our open source bootstrapper for projects and demos: [datascience-project-quickstarter](https://github.com/AYLIEN/datascience-project-quickstarter)
+
+analysis of news feed data. 
+
+We also include some patterns that we re-use and modify regularly, such as a simple interface to the 
+newsAPI, and caching responses for demos. 
+
+If you have an idea, feel free to submit a PR, or open an issue for discussion. 
 
 ### Models
 
@@ -32,14 +42,4 @@ A demo directory with the given name and running streamlit skeleton will be crea
 
 You can checkout the README generated in the new demo directory for further guidance.
 
-### Create Another Project
 
-Run `quickstart-project --path <new project path> --libname <new library name>`    
-
-### Completing a project
-Here is a checklist to turn the new project into a fully functional tool:
-- [ ] implement your project's core functionality in the Python package
-- [ ] maintain dependencies in `requirements.txt`
-- [ ] implement a demo
-- [ ] implement service
-- [ ] write tests
