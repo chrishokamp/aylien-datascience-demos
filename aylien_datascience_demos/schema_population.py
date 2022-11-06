@@ -1,8 +1,11 @@
 from collections import defaultdict, Counter
+import json
 import arrow
 from collections import defaultdict
 import networkx as nx
 import uuid
+
+import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import DBSCAN
@@ -46,7 +49,7 @@ def pick_event_title(stories):
 
     vectorizer = TfidfVectorizer(stop_words="english")
     X = vectorizer.fit_transform(texts)
-    ranked_indices = textrank(X)
+    ranked_indices, ranked_scores = textrank(X)
     cluster_title = None
     for i in ranked_indices:
         if labels[i] == 1:
@@ -54,15 +57,16 @@ def pick_event_title(stories):
     return cluster_title
 
 
-def textrank(vectors):
+def textrank(vectors, min_sim=0.3):
     S = cosine_similarity(vectors, vectors)
+    np.fill_diagonal(S, 0.)
+    S[S < min_sim] = 0.
     nodes = list(range(S.shape[0]))
     graph = nx.from_numpy_matrix(S)
+
     pagerank = nx.pagerank(graph, weight='weight')
     scores = [pagerank[i] for i in nodes]
-    rank_enum = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-    ranked_indices = [x[0] for x in rank_enum]
-    return ranked_indices
+    return zip(*sorted(enumerate(scores), key=lambda x: x[1], reverse=True))
 
 
 def pick_event_description(stories, num_body_sents=2):
@@ -162,6 +166,15 @@ def extract_geolocations(events):
     return event_id_to_geolocs, name_to_geoloc
 
 
+def category_to_json(category):
+    return json.dumps(
+        {
+            'id': category['id'],
+            'taxonomy': category['taxonomy']
+        }
+    )
+
+
 def stories_to_event(stories):
     """
     * title
@@ -174,10 +187,23 @@ def stories_to_event(stories):
     desc = pick_event_description(stories)
     start_date = extract_start_date(stories)
 
+    # Categories
+    # TODO: add taxonomy relations(?) (parent / child)
+    category_counts = Counter()
+    for s in stories:
+        for c in s['categories']:
+            # currently only Aylien Taxonomy allowed thru
+            if 'ay.' in c['id']:
+                category_counts.update([category_to_json(c)])
+    categories = []
+    for category_json, count in category_counts.most_common():
+        category = json.loads(category_json)
+        category['count_in_cluster']: count
+        categories.append(category)
+
     people = extract_frequent_entities(
         stories,
         allowed_types=['Human'], max_num=5, min_ratio=0.4)
-    # allowed_types = ['Human'], max_num = 5, min_ratio = 0.4)
 
     locations = extract_frequent_entities(
         stories,
@@ -188,8 +214,7 @@ def stories_to_event(stories):
     organisations = extract_frequent_entities(
         stories,
         allowed_types=[
-            'Nonprofit_organization',
-            'Public_company', 'Company', 'Business', 'Organization', 'Brick_and_mortar'
+            'Public_company', 'Company', 'Business', 'Brick_and_mortar'
         ],
         max_num=5, min_ratio=0.4)
 
@@ -198,9 +223,11 @@ def stories_to_event(stories):
         'title': title,
         'description': desc,
         'start_date': start_date,
+        'categories': categories,
         'people': people,
         'locations': locations,
         'organisations': organisations,
+        'categories': categories,
         'stories': stories,
     }
     return event

@@ -1,6 +1,5 @@
 import streamlit as st
 from pathlib import Path
-import json
 from PIL import Image
 import os
 import copy
@@ -9,10 +8,7 @@ import calendar
 import hashlib
 from collections import OrderedDict, defaultdict, Counter
 from datetime import datetime
-from datetime import timezone
-from datetime import timedelta
 import json
-
 
 import spacy
 
@@ -29,7 +25,8 @@ FACET_MAP = {
   'LOC_FACET': 'locations',
   'PEOPLE_FACET': 'people',
   'DATE_FACET': 'dates',
-  'ORG_FACET': 'organisations'
+  'ORG_FACET': 'organisations',
+  'CATEGORY_FACET': 'categories'
 }
 FACETS = namedtuple(
     'Facets',
@@ -100,8 +97,8 @@ def get_session_state():
         # incrementally, simulating streaming usecase (tracking how
         # events evolve over time)
         query_template = {
-          "text": "Takeoff",
-          "per_page": 25,
+          "text": "Ukraine",
+          "per_page": 50,
           "published_at.start": "NOW-7DAYS",
           "sort_by": "relevance",
           "language": "en"
@@ -145,6 +142,8 @@ def render_sidebar(session_state):
         session_state['events'] = OrderedDict()
         session_state['id_to_geolocs'] = None
         st.experimental_rerun()
+    st.sidebar.markdown('----')
+    st.sidebar.markdown('### Select a Sample Feed')
     st.sidebar.markdown('----')
 
     # Newsapi Query
@@ -234,6 +233,7 @@ class DateTimeEncoder(json.JSONEncoder):
 #         return datetime.fromisoformat(_isoformat)
 #     return obj
 
+# TODO: add facet config to sidebar -- max num facets per column
 
 def render_main(session_state):
     #############
@@ -251,6 +251,8 @@ def render_main(session_state):
             render_people_view(session_state, selected)
         elif facet == FACETS.ORG_FACET:
             render_organisations_view(session_state, selected)
+        elif facet == FACETS.CATEGORY_FACET:
+            render_categories_view(session_state, selected)
         else:
             pass
     else:
@@ -260,25 +262,30 @@ def render_main(session_state):
 
 
 def create_overview(session_state):
+    event_summary_cols = st.columns(6)
+
+    event_summary_cols[1].metric('Stories in Feed', len(session_state['stories']))
+    event_summary_cols[0].metric('Events in Feed', len(session_state['feed_items']))
+
     events = session_state["feed_items"].values()
     date_to_events = defaultdict(list)
     for e in events:
         date_to_events[e["start_date"].date()].append(e)
 
-    event_summary_cols = st.columns(6)
-
-    event_summary_cols[0].metric('Total Events in Feed', len(events))
-    event_summary_cols[1].metric('Stories in Feed', len(events))
-
-    geolocs = session_state["sf_to_geoloc"].values()
     country_to_events = group_by_country(events, session_state["id_to_geolocs"])
 
     people_to_events = group_by_entity(events, "people")
     org_to_events = group_by_entity(events, "organisations")
+
     # TODO: group by category (i.e. category in story)
+    # TODO: session_state['visible_events']
+    # TODO: updated every time a checkbox is clicked
+    # TODO: don't make user click "Render"(?)
+    # TODO: remove facet-specific displays(?)
+    category_to_events = group_by_category(events)
 
     facet_to_selected = defaultdict(list)
-    date_col, loc_col, people_col, org_col = st.columns((1, 1, 1, 1))
+    date_col, loc_col, people_col, org_col, category_col = st.columns((1, 1, 1, 1, 1))
 
     date_col.write("### Dates")
     all_dates = date_col.checkbox("all / clear", key="all-dates")
@@ -294,14 +301,9 @@ def create_overview(session_state):
         if selected:
             facet_to_selected[FACETS.DATE_FACET].append(d)
 
-    geolocs = session_state["sf_to_geoloc"].values()
-    df = pd.DataFrame({
-        'lat' : [float(g["lat"]) for g in geolocs],
-        'lon' : [float(g["lon"]) for g in geolocs]
-    })
-
     loc_col.write("### Locations")
     all_locs = loc_col.checkbox("all / clear", key="all-locs")
+    # TODO: configurable cutoff from sidebar for UX
     for c, c_events in sorted(country_to_events.items(), key=lambda x: len(x[1]), reverse=True):
         selected = loc_col.checkbox(
             f"{c} ({len(c_events)} events)",
@@ -314,10 +316,12 @@ def create_overview(session_state):
 
     people_col.write("### People")
     all_people = people_col.checkbox("all / clear", key="all-people")
-    for e, e_events in sorted(people_to_events.items(), key=lambda x: len(x[1]), reverse=True):
+    for e, e_events in sorted(
+            people_to_events.items(),
+            key=lambda x: len(x[1]),
+            reverse=True
+    ):
         sf = e[1]
-        # if people_col.button(f"{sf} ({len(d_events)} events)", key=f"per-{sf}"):
-        #     pass
         selected = people_col.checkbox(
             f"{sf} ({len(e_events)} events)",
             value=all_people,
@@ -329,7 +333,8 @@ def create_overview(session_state):
 
     org_col.write("### Organisations")
     all_orgs = org_col.checkbox("all / clear", key="all-orgs")
-    for e, e_events in sorted(org_to_events.items(), key=lambda x: len(x[1]), reverse=True):
+    for e, e_events in sorted(
+            org_to_events.items(), key=lambda x: len(x[1]), reverse=True):
         sf = e[1]
         selected = org_col.checkbox(
             f"{sf} ({len(e_events)} events)",
@@ -340,7 +345,23 @@ def create_overview(session_state):
         if selected:
             facet_to_selected[FACETS.ORG_FACET].append(e)
 
-    date_col, loc_col, people_col, org_col = st.columns((1, 1, 1, 1))
+    category_col.write("### Categories")
+    all_categories = category_col.checkbox("all / clear", key="all-categories")
+    for e, e_events in sorted(
+            category_to_events.items(),
+            key=lambda x: len(x[1]),
+            reverse=True
+    ):
+        selected = category_col.checkbox(
+            f"{e} ({len(e_events)} events)",
+            value=all_categories,
+            key=f'categories-checkbox-{idx}'
+        )
+        idx += 1
+        if selected:
+            facet_to_selected[FACETS.CATEGORY_FACET].append(e)
+
+    # date_col, loc_col, people_col, org_col = st.columns((1, 1, 1, 1))
     facet = None
     if date_col.button("View by date"):
         facet = FACETS.DATE_FACET
@@ -350,6 +371,8 @@ def create_overview(session_state):
         facet = FACETS.PEOPLE_FACET
     if org_col.button("View by organisation"):
         facet = FACETS.ORG_FACET
+    if category_col.button("View by Category"):
+        facet = FACETS.CATEGORY_FACET
 
     st.write("---")
     return facet, facet_to_selected[facet]
@@ -375,7 +398,6 @@ def render_chronological_view(session_state, selected_dates):
         st.write(f"## Events on {format_date(d)}")
         for i, e in enumerate(date_to_events[d]):
             render_event_card(e, session_state)
-
         st.markdown("----")
 
 
@@ -420,6 +442,17 @@ def render_organisations_view(session_state, selected_orgs):
             render_event_card(e, session_state)
 
 
+def render_categories_view(session_state, selected_categories):
+    events = session_state["feed_items"].values()
+    category_to_events = group_by_category(events)
+    for category_string in selected_categories:
+        e_events = category_to_events[category_string]
+        st.write(f"## Events involving {category_string}")
+        st.write(f"{category_string}")
+        for i, e in enumerate(e_events):
+            render_event_card(e, session_state)
+
+
 def group_by_country(items, id_to_geolocs):
     country_to_items = defaultdict(list)
     for item in items:
@@ -429,6 +462,19 @@ def group_by_country(items, id_to_geolocs):
             country = most_common(item_countries)
             country_to_items[country].append(item)
     return country_to_items
+
+
+def hash_category(category):
+    return f'id: {category["id"]} - Taxonomy: {category["taxonomy"]}'
+
+
+def group_by_category(items):
+    category_to_items = defaultdict(list)
+
+    for item in items:
+        for category in item['categories']:
+            category_to_items[hash_category(category)].append(item)
+    return category_to_items
 
 
 def group_by_entity(items, entity_field):
@@ -458,6 +504,9 @@ def render_event_card(event, session_state):
     cols[2].write('### Organisations')
     for entity in event['organisations']:
         cols[2].write(entity['surface_form'])
+    cols[3].write('### Categories')
+    for category in event['categories']:
+        cols[3].write(hash_category(category))
 
     col1, col2 = st.columns(2)
     with col1.expander('Stories'):
