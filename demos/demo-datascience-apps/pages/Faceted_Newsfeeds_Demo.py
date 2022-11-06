@@ -3,7 +3,7 @@ from pathlib import Path
 from PIL import Image
 import os
 import copy
-import time
+import arrow
 import calendar
 import hashlib
 from collections import OrderedDict, defaultdict, Counter
@@ -33,7 +33,6 @@ FACETS = namedtuple(
     FACET_MAP.keys()
 )(**FACET_MAP)
 
-
 path_to_file = Path(os.path.dirname(os.path.abspath(__file__)))
 img = Image.open(path_to_file / '../favicon.ico')
 
@@ -42,6 +41,22 @@ st.set_page_config(
     page_icon=img,
     layout="wide",
     initial_sidebar_state='auto')
+
+
+@st.cache
+def get_example_feeds():
+    EXAMPLE_FEED_PATHS = [
+        p for p in (path_to_file / 'example_faceted_newsfeeds').glob('*.json')
+    ]
+    feeds = []
+    for p in EXAMPLE_FEED_PATHS:
+        feed = json.load(open(p))
+        for e in feed['feed_items'].values():
+            # custom deserialization :-)
+            e['start_date'] = arrow.get(e['start_date']).datetime
+        feed['feed_name'] = p.stem
+        feeds.append(feed)
+    return feeds
 
 
 class Newsapi:
@@ -108,6 +123,7 @@ def get_session_state():
         state['feed_items'] = OrderedDict()
         state['stories'] = OrderedDict()
         state['newsapi'] = Newsapi()
+        state['example_feeds'] = get_example_feeds()
     state['INIT_FACETED_NEWSFEEDS_DEMO'] = True
 
     return state
@@ -136,14 +152,28 @@ def render_sidebar(session_state):
     # Configure Input Streams/Sources #
     ###################################
     # user can load or paste generated queries from file
-    st.sidebar.markdown('### Input Sources')
-    if st.sidebar.button('Clear Feed'):
-        session_state['feed_items'] = OrderedDict()
-        session_state['events'] = OrderedDict()
-        session_state['id_to_geolocs'] = None
-        st.experimental_rerun()
+    # st.sidebar.markdown('### Input Sources')
+    # if st.sidebar.button('Clear Feed'):
+    #     session_state['feed_items'] = OrderedDict()
+    #     session_state['id_to_geolocs'] = None
+    #     st.experimental_rerun()
     st.sidebar.markdown('----')
+
     st.sidebar.markdown('### Select a Sample Feed')
+
+    selected_feed = st.sidebar.radio(
+        'Select an Example Feed',
+        options=session_state['example_feeds'],
+        format_func=lambda o: o['feed_name'],
+        key='select-example-feed-radio'
+    )
+    session_state['current_newsapi_query'] = selected_feed['current_newsapi_query']
+    session_state['feed_items'] = selected_feed['feed_items']
+    session_state['stories'] = selected_feed['stories']
+    session_state["id_to_geolocs"] = selected_feed['id_to_geolocs']
+    session_state["sf_to_geoloc"] = selected_feed['sf_to_geoloc']
+    # st.experimental_rerun()
+
     st.sidebar.markdown('----')
 
     # Newsapi Query
@@ -189,6 +219,7 @@ def render_sidebar(session_state):
 
         session_state["id_to_geolocs"] = id_to_geolocs
         session_state["sf_to_geoloc"] = sf_to_geoloc
+        st.experimental_rerun()
 
     st.sidebar.markdown('----')
 
@@ -202,7 +233,9 @@ def render_sidebar(session_state):
         downloadable_state = {
             'current_newsapi_query': session_state['current_newsapi_query'],
             'feed_items': session_state['feed_items'],
-            'stories': session_state['stories']
+            'stories': session_state['stories'],
+            'id_to_geolocs': session_state['id_to_geolocs'],
+            'sf_to_geoloc': session_state['sf_to_geoloc']
         }
         download_state_str = \
             download_button(
@@ -226,14 +259,6 @@ class DateTimeEncoder(json.JSONEncoder):
             return None
         return json.JSONEncoder.default(self, o)
 
-
-# def object_hook(obj):
-#     _isoformat = obj.get('_isoformat')
-#     if _isoformat is not None:
-#         return datetime.fromisoformat(_isoformat)
-#     return obj
-
-# TODO: add facet config to sidebar -- max num facets per column
 
 def render_main(session_state):
     #############
@@ -272,10 +297,10 @@ def create_overview(session_state):
     for e in events:
         date_to_events[e["start_date"].date()].append(e)
 
-    country_to_events = group_by_country(events, session_state["id_to_geolocs"])
+    country_to_events = group_by_country(events, session_state['id_to_geolocs'])
 
-    people_to_events = group_by_entity(events, "people")
-    org_to_events = group_by_entity(events, "organisations")
+    people_to_events = group_by_entity(events, 'people')
+    org_to_events = group_by_entity(events, 'organisations')
 
     # TODO: group by category (i.e. category in story)
     # TODO: session_state['visible_events']
@@ -426,7 +451,7 @@ def render_people_view(session_state, selected_people):
     for (eid, sf) in selected_people:
         e_events = entity_to_events[(eid, sf)]
         st.write(f"## Events involving {sf}")
-        st.write(f"Entity: {eid}")
+        st.write(f"#### Entity: {eid}")
         for i, e in enumerate(e_events):
             render_event_card(e, session_state)
 
@@ -437,7 +462,7 @@ def render_organisations_view(session_state, selected_orgs):
     for (eid, sf) in selected_orgs:
         e_events = entity_to_events[(eid, sf)]
         st.write(f"## Events involving {sf}")
-        st.write(f"{eid}")
+        st.write(f"#### {eid}")
         for i, e in enumerate(e_events):
             render_event_card(e, session_state)
 
@@ -448,7 +473,7 @@ def render_categories_view(session_state, selected_categories):
     for category_string in selected_categories:
         e_events = category_to_events[category_string]
         st.write(f"## Events involving {category_string}")
-        st.write(f"{category_string}")
+        st.write(f"#### {category_string}")
         for i, e in enumerate(e_events):
             render_event_card(e, session_state)
 
@@ -488,7 +513,7 @@ def group_by_entity(items, entity_field):
 
 
 def render_event_card(event, session_state):
-    col1, col2 = st.columns(2)
+    col1, col2 = st.columns([4, 2])
     col1.write(f'#### {event["title"]}')
     col1.write(f'{event["description"]}')
     col1.metric(
@@ -514,108 +539,6 @@ def render_event_card(event, session_state):
             st.markdown(f'[{story["title"]}]({story["links"]["permalink"]})')
 
     col1.markdown('-----')
-
-
-def render_event(
-        item,
-        session_state,
-    ):
-    stories = item["stories"]
-    # if item.get('start_date', None) is not None:
-    #     date_col.markdown(f'Date: `{item["start_date"].date()}`')
-    # num_stories_col.markdown(f"Number of stories: `{len(stories)}`")
-    #
-    # st.markdown(f'#### {item["title"]}')
-    # st.write(item["description"])
-
-    people_string = 'PEOPLE: ' + ", ".join([str(e["surface_form"]) for e in item["people"]])
-    loc_string = 'LOCATIONS: ' + ", ".join([str(e["surface_form"]) for e in item["locations"]])
-    org_string = 'ORGS: ' + ", ".join([str(e["surface_form"]) for e in item["organisations"]])
-    st.write(people_string)
-    st.write(loc_string)
-    st.write(org_string)
-
-    dedup_stories = []
-    seen = set()
-    for s in stories:
-        # if s["links"]["permalink"]:
-        if s["title"] not in seen:
-            dedup_stories.append(s)
-            seen.add(s["title"])
-
-    titles_string = "\n".join([
-        f'<p><a style="color: #ffab03 !important;" href={s["links"]["permalink"]}>{s["title"]}</a></p>'
-        for s in dedup_stories[:3]
-    ])
-    # attr_style = 'style="color: #7d7d7d"'
-    attr_style = 'style="color: black"'
-    components.html(
-        f"""
-        <div style="border: 3px solid #ffab03; color: white; border-radius: 15px; margin-bottom: 10px;">
-        <div style="padding: 15px 15px 0px 15px; font-family: sans-serif">
-        <h3 style="text-align: center">{item["title"]}</h3>
-        <p style="text-align: center">{item["description"]}</p>
-        <hr style="width:100%; text-align:left; margin-left:0">
-        <p><b {attr_style}>Stories:</b> {len(stories)}</p>
-        <p><b {attr_style}>People:</b> {people_string}</p>
-        <p><b {attr_style}>Locations:</b> {loc_string}</p>
-        <p><b {attr_style}>Organisations:</b> {org_string}</p>
-        <hr style="width:100%; text-align:left; margin-left:0">
-        {titles_string}
-        </div>
-        </div>
-        """,
-        height=430,
-        width=800,
-    )
-    # st.markdown('---------------------')
-
-
-def render_aylien_event(
-        item,
-        session_state,
-        _st=None
-    ):
-    id = item_id(item)
-
-    if _st is None:
-        _st = st
-
-    # visualizer config
-    # these are the same ents in the Aylien EL config
-    # get all local user NER labels on the fly by looking at all of user's patterns
-    # global_labels = [r['label'] for r in session_state['global_rules'].values()]
-    # local_labels = [r['label'] for r in session_state['local_rules'][id].values()]
-    # user_labels = list(set(global_labels + local_labels))
-
-    # extract attributes from this item
-    date_col, article_col, source_col, link_col = st.columns([2, 2, 2, 1])
-    # if this is an article from a newsAPI source, show the id
-    if item.get('published_at', None) is not None:
-        date_col.markdown(f'Published at: {item["published_at"]}')
-    if item.get('published_at', None) is not None:
-        article_col.markdown(f'`story_id: {item["id"]}`')
-    if item.get('source', None) is not None:
-        source_col.markdown(f'Source: [{item["source"]["name"]}]({item["source"]["home_page_url"]})')
-    if item.get('links', {}).get('permalink', None) is not None:
-        link_col.markdown(f'[Permalink]({item["links"]["permalink"]})')
-
-    _st.markdown(f'#### {item["title"]}')
-    _st.markdown('#### Entities:')
-    _st.markdown(", ".join([str(e) for e in item["ents"]]))
-    _st.markdown('#### Sub-events:')
-    body_md = '\n'.join([f'- {s}' for s in item['sents']])
-    _st.markdown(body_md)
-
-    _st.write('\n')
-    col1, col2, _, _, col3 = st.columns([2, 2, 1, 1, 1])
-    if col1.button('Remove Document', key=f'skip_doc_button_{id}'):
-        col3.write('Document Removed')
-        del session_state['feed_items'][id]
-        time.sleep(0.4)
-        st.experimental_rerun()
-
-    _st.markdown('---------------------')
 
 
 if __name__ == '__main__':

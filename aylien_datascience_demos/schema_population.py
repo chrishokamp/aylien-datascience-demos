@@ -76,7 +76,7 @@ def pick_event_description(stories, num_body_sents=2):
     labels = [(1 if len(s.split()) < 60 else 0) for s in sents]
     vectorizer = TfidfVectorizer(stop_words="english", lowercase=True)
     X = vectorizer.fit_transform(sents)
-    ranked_indices = textrank(X)
+    ranked_indices, ranked_scores = textrank(X)
     summary = None
     for i in ranked_indices:
         if labels[i] == 1:
