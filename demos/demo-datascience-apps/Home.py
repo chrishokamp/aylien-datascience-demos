@@ -4,7 +4,7 @@ from aylien_datascience_demos.example_module import Counter, TextReverser
 
 
 page_config = st.set_page_config(
-    page_title="Demo",
+    page_title="NewsAPI Datascience demos",
 )
 
 
@@ -18,7 +18,8 @@ def get_session_state():
 
 
 def main():
-    st.write("# Simple Streamlit Demo")
+    st.write("# Aylien NewsAPI Datascience Demos")
+    st.write("#### Use the sidebar to navigate")
 
 
 if __name__ == '__main__':

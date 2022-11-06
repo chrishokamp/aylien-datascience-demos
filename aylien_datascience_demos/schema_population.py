@@ -38,9 +38,11 @@ def pick_event_title(stories):
         if s["title"].strip() != "":
             labels.append(1)
             texts.append(s["title"])
+        # we add first body sentence to improve textrank,
+        # but it can't be the best title
         if len(s["body"].strip()):
             labels.append(0)
-            texts.append(str(s["body_doc"]).sents[0])
+            texts.append(str(list(s["body_doc"].sents)[0]))
 
     vectorizer = TfidfVectorizer(stop_words="english")
     X = vectorizer.fit_transform(texts)
@@ -138,8 +140,8 @@ def extract_frequent_entities(
     return entity_items[:max_num]
 
 
+# TODO: this method is slow, improve efficiency
 def extract_geolocations(events):
-
     event_id_to_geolocs = defaultdict(list)
     name_to_geoloc = {}
 

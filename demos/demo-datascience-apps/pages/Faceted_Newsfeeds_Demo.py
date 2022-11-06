@@ -8,11 +8,17 @@ import time
 import calendar
 import hashlib
 from collections import OrderedDict, defaultdict, Counter
+from datetime import datetime
+from datetime import timezone
+from datetime import timedelta
+import json
+
 
 import spacy
 
 import aylien_datascience_demos.schema_population as schema_population
 import aylien_datascience_demos.newsapi as newsapi
+from aylien_datascience_demos.streamlit_components.components import download_button
 import streamlit.components.v1 as components
 from collections import namedtuple
 
@@ -55,9 +61,6 @@ class Newsapi:
         return self.stories_cache[key]
 
 
-# TODO: cache resolved events, processing is expensive
-
-
 def hide_menu_and_footer():
     hide_streamlit_style = '''
     <style>
@@ -87,11 +90,15 @@ def get_session_state():
     state = st.session_state
 
     if not state.get('INIT_FACETED_NEWSFEEDS_DEMO', False):
+        # load previously cached feeds
+
         # Initialize user state if session doesn't exist
         # Create a Tokenizer with the default settings for English
         # including punctuation rules and exceptions
         nlp = spacy.load("en_core_web_sm")
-        # TODO: for online views, let user get more stories
+        # TODO: for online views, let user add more stories
+        # incrementally, simulating streaming usecase (tracking how
+        # events evolve over time)
         query_template = {
           "text": "Takeoff",
           "per_page": 25,
@@ -99,13 +106,10 @@ def get_session_state():
           "sort_by": "relevance",
           "language": "en"
         }
-        # TODO: let user specify the number of _items_ they want to get,
-        # this is important in the context of online event extraction
-
         state['local_nlp'] = nlp
         state['current_newsapi_query'] = copy.deepcopy(query_template)
         state['feed_items'] = OrderedDict()
-
+        state['stories'] = OrderedDict()
         state['newsapi'] = Newsapi()
     state['INIT_FACETED_NEWSFEEDS_DEMO'] = True
 
@@ -122,11 +126,14 @@ def render():
     UI for rendering views of Aylien item collections
     """
     session_state = get_session_state()
+    render_sidebar(session_state)
+    render_main(session_state)
 
+
+def render_sidebar(session_state):
     ###########
     # SIDEBAR #
     ###########
-    # st.sidebar.markdown('#### Dynamic Event Views')
 
     ###################################
     # Configure Input Streams/Sources #
@@ -147,48 +154,91 @@ def render():
         json.dumps(session_state['current_newsapi_query'], indent=2),
         height=350
     )
+    session_state['current_newsapi_query'] = json.loads(query)
+
     if st.sidebar.button('Populate Feed from Query', key='populate_feed_from_query'):
         query = session_state['current_newsapi_query']
+        st.sidebar.info('Retrieving Feed Stories ... ')
         stories = session_state['newsapi'].retrieve_stories(
             params=query
         )
         for s in stories:
             s["title_doc"] = session_state["local_nlp"](s["title"])
             s["body_doc"] = session_state["local_nlp"](s["body"])
+        st.sidebar.info('Extracting clusters from feed ... ')
+        ###############################################
+        # Map items into views (Events, Entities, ... #
+        # ("Event" is another type of transient Item) #
+        ###############################################
         clusters = schema_population.cluster_items(
             stories,
             get_text=(lambda x: f"{str(x['title_doc'])} {str(list(x['body_doc'].sents)[:3])}"),
             min_samples=2,
             eps=0.75
         )
+        st.sidebar.info('Extracting Events from Feed ... ')
         events = [schema_population.stories_to_event(c) for c in clusters]
+        st.sidebar.info('Extracting Geolocations... ')
         id_to_geolocs, sf_to_geoloc =\
             schema_population.extract_geolocations(events)
         # TODO: cache events for query, don't recompute
         # TODO: assert events are json serializable
         for e in events:
-            session_state["feed_items"][e["id"]] = e
+            session_state['feed_items'][e['id']] = e
+        for s in stories:
+            session_state['stories'][s['id']] = s
+
         session_state["id_to_geolocs"] = id_to_geolocs
         session_state["sf_to_geoloc"] = sf_to_geoloc
-        st.experimental_rerun()
 
     st.sidebar.markdown('----')
 
-    session_state['current_newsapi_query'] = json.loads(query)
+    ##################
+    # DOWNLOAD STATE #
+    ##################
+    # User can download their state
+    
+    if len(session_state['feed_items']) > 0:
+        st.sidebar.markdown('### Download State')
+        downloadable_state = {
+            'current_newsapi_query': session_state['current_newsapi_query'],
+            'feed_items': session_state['feed_items'],
+            'stories': session_state['stories']
+        }
+        download_state_str = \
+            download_button(
+                json.dumps(downloadable_state, indent=2, cls=DateTimeEncoder),
+                download_filename=f'state.json',
+                button_text='Download Current State',
+                pickle_it=False
+            )
+        st.sidebar.markdown(download_state_str, unsafe_allow_html=True)
 
     ###############
     # END SIDEBAR #
     ###############
 
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, datetime):
+            return o.isoformat()
+        if isinstance(o, spacy.tokens.Doc):
+            return None
+        return json.JSONEncoder.default(self, o)
+
+
+# def object_hook(obj):
+#     _isoformat = obj.get('_isoformat')
+#     if _isoformat is not None:
+#         return datetime.fromisoformat(_isoformat)
+#     return obj
+
+
+def render_main(session_state):
     #############
     # Main Area #
     #############
-
-    ###############################################
-    # Map items into views (Events, Entities, ... #
-    # ("Event" is another type of transient Item) #
-    ###############################################
-
     if len(session_state['feed_items']) > 0:
         st.write("# Overview")
         facet, selected = create_overview(session_state)
@@ -204,11 +254,9 @@ def render():
         else:
             pass
     else:
-        st.write("# Breaking a newsfeed into facets: time, location, entities")
-
-    #################
-    # End View Area #
-    #################
+        st.write("# Faceted Newsfeeds")
+        st.write("### Please populate your feed in the sidebar")
+        st.write("### Or choose from example feeds")
 
 
 def create_overview(session_state):
@@ -216,6 +264,11 @@ def create_overview(session_state):
     date_to_events = defaultdict(list)
     for e in events:
         date_to_events[e["start_date"].date()].append(e)
+
+    event_summary_cols = st.columns(6)
+
+    event_summary_cols[0].metric('Total Events in Feed', len(events))
+    event_summary_cols[1].metric('Stories in Feed', len(events))
 
     geolocs = session_state["sf_to_geoloc"].values()
     country_to_events = group_by_country(events, session_state["id_to_geolocs"])
@@ -342,7 +395,6 @@ def render_location_view(session_state, selected_countries):
         st.write(f"## Events in {c}")
         for i, e in enumerate(c_events):
             render_event_card(e, session_state)
-
         st.markdown("----")
 
 
