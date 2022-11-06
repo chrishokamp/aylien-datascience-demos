@@ -188,38 +188,43 @@ def render_sidebar(session_state):
     if st.sidebar.button('Populate Feed from Query', key='populate_feed_from_query'):
         query = session_state['current_newsapi_query']
         st.sidebar.info('Retrieving Feed Stories ... ')
-        stories = session_state['newsapi'].retrieve_stories(
-            params=query
-        )
-        for s in stories:
-            s["title_doc"] = session_state["local_nlp"](s["title"])
-            s["body_doc"] = session_state["local_nlp"](s["body"])
-        st.sidebar.info('Extracting clusters from feed ... ')
-        ###############################################
-        # Map items into views (Events, Entities, ... #
-        # ("Event" is another type of transient Item) #
-        ###############################################
-        clusters = schema_population.cluster_items(
-            stories,
-            get_text=(lambda x: f"{str(x['title_doc'])} {str(list(x['body_doc'].sents)[:3])}"),
-            min_samples=2,
-            eps=0.75
-        )
-        st.sidebar.info('Extracting Events from Feed ... ')
-        events = [schema_population.stories_to_event(c) for c in clusters]
-        st.sidebar.info('Extracting Geolocations... ')
-        id_to_geolocs, sf_to_geoloc =\
-            schema_population.extract_geolocations(events)
-        # TODO: cache events for query, don't recompute
-        # TODO: assert events are json serializable
-        for e in events:
-            session_state['feed_items'][e['id']] = e
-        for s in stories:
-            session_state['stories'][s['id']] = s
+        try:
+            stories = session_state['newsapi'].retrieve_stories(
+                params=query
+            )
+            for s in stories:
+                s["title_doc"] = session_state["local_nlp"](s["title"])
+                s["body_doc"] = session_state["local_nlp"](s["body"])
+            st.sidebar.info('Extracting clusters from feed ... ')
+            ###############################################
+            # Map items into views (Events, Entities, ... #
+            # ("Event" is another type of transient Item) #
+            ###############################################
+            clusters = schema_population.cluster_items(
+                stories,
+                get_text=(lambda x: f"{str(x['title_doc'])} {str(list(x['body_doc'].sents)[:3])}"),
+                min_samples=2,
+                eps=0.75
+            )
+            st.sidebar.info('Extracting Events from Feed ... ')
+            events = [schema_population.stories_to_event(c) for c in clusters]
+            st.sidebar.info('Extracting Geolocations... ')
+            id_to_geolocs, sf_to_geoloc =\
+                schema_population.extract_geolocations(events)
+            # TODO: cache events for query, don't recompute
+            # TODO: assert events are json serializable
+            for e in events:
+                session_state['feed_items'][e['id']] = e
+            for s in stories:
+                session_state['stories'][s['id']] = s
 
-        session_state["id_to_geolocs"] = id_to_geolocs
-        session_state["sf_to_geoloc"] = sf_to_geoloc
-        st.experimental_rerun()
+            session_state["id_to_geolocs"] = id_to_geolocs
+            session_state["sf_to_geoloc"] = sf_to_geoloc
+            st.experimental_rerun()
+        except KeyError as e:
+            st.error('Error getting stories, your NewsAPI credentials probably aren\'t set locally')
+            st.error('Getting new feeds won\'t work on Streamlit cloud, clone the app and do it yourself ;-)')
+
 
     st.sidebar.markdown('----')
 
