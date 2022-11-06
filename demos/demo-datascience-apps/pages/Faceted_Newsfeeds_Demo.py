@@ -14,7 +14,7 @@ import spacy
 
 import aylien_datascience_demos.schema_population as schema_population
 import aylien_datascience_demos.newsapi as newsapi
-from aylien_datascience_demos.streamlit_components.components import download_button
+from aylien_datascience_demos.components import download_button
 import streamlit.components.v1 as components
 from collections import namedtuple
 
