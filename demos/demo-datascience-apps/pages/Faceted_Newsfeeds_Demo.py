@@ -56,6 +56,8 @@ def get_example_feeds():
             e['start_date'] = arrow.get(e['start_date']).datetime
         feed['feed_name'] = p.stem
         feeds.append(feed)
+    # Default option for user to populate state themselves
+    # feeds = [{'feed_name': 'Query NewsAPI'}] + feeds
     return feeds
 
 
@@ -103,12 +105,10 @@ def get_session_state():
 
     if not state.get('INIT_FACETED_NEWSFEEDS_DEMO', False):
         # load previously cached feeds
-
         # Initialize user state if session doesn't exist
         # Create a Tokenizer with the default settings for English
         # including punctuation rules and exceptions
         nlp = spacy.load("en_core_web_sm")
-        # TODO: for online views, let user add more stories
         # incrementally, simulating streaming usecase (tracking how
         # events evolve over time)
         query_template = {
@@ -151,33 +151,26 @@ def render_sidebar(session_state):
     ###################################
     # Configure Input Streams/Sources #
     ###################################
-    # user can load or paste generated queries from file
-    # st.sidebar.markdown('### Input Sources')
-    # if st.sidebar.button('Clear Feed'):
-    #     session_state['feed_items'] = OrderedDict()
-    #     session_state['id_to_geolocs'] = None
-    #     st.experimental_rerun()
     st.sidebar.markdown('----')
 
     st.sidebar.markdown('### Select a Sample Feed')
-
     selected_feed = st.sidebar.radio(
         'Select an Example Feed',
         options=session_state['example_feeds'],
         format_func=lambda o: o['feed_name'],
         key='select-example-feed-radio'
     )
-    session_state['current_newsapi_query'] = selected_feed['current_newsapi_query']
-    session_state['feed_items'] = selected_feed['feed_items']
-    session_state['stories'] = selected_feed['stories']
-    session_state["id_to_geolocs"] = selected_feed['id_to_geolocs']
-    session_state["sf_to_geoloc"] = selected_feed['sf_to_geoloc']
-    # st.experimental_rerun()
+    if selected_feed['feed_name'] != 'Query NewsAPI':
+        session_state['current_newsapi_query'] = selected_feed['current_newsapi_query']
+        session_state['feed_items'] = selected_feed['feed_items']
+        session_state['stories'] = selected_feed['stories']
+        session_state["id_to_geolocs"] = selected_feed['id_to_geolocs']
+        session_state["sf_to_geoloc"] = selected_feed['sf_to_geoloc']
 
     st.sidebar.markdown('----')
 
     # Newsapi Query
-    # TODO: query cache with some data loaded up on startup
+    # TODO: support newsAPI login and user abstractions
     query = st.sidebar.text_area(
         'NewsAPI Query',
         json.dumps(session_state['current_newsapi_query'], indent=2),
@@ -225,14 +218,12 @@ def render_sidebar(session_state):
             st.error('Error getting stories, your NewsAPI credentials probably aren\'t set locally')
             st.error('Getting new feeds won\'t work on Streamlit cloud, clone the app and do it yourself ;-)')
 
-
     st.sidebar.markdown('----')
 
     ##################
     # DOWNLOAD STATE #
     ##################
-    # User can download their state
-    
+    # User can download their state with stories, events, facets ...
     if len(session_state['feed_items']) > 0:
         st.sidebar.markdown('### Download State')
         downloadable_state = {
@@ -270,7 +261,7 @@ def render_main(session_state):
     # Main Area #
     #############
     if len(session_state['feed_items']) > 0:
-        st.write("# Overview")
+        st.write("# Feed Events Overview")
         facet, selected = create_overview(session_state)
 
         if facet == FACETS.DATE_FACET:
@@ -292,106 +283,111 @@ def render_main(session_state):
 
 
 def create_overview(session_state):
+    max_facets_in_category = 10
     event_summary_cols = st.columns(6)
 
     event_summary_cols[1].metric('Stories in Feed', len(session_state['stories']))
     event_summary_cols[0].metric('Events in Feed', len(session_state['feed_items']))
+    events = session_state['feed_items'].values()
+    # TODO: only consider facets that occur in >1 event?
+    session_state['renderable_events'] = events
 
-    events = session_state["feed_items"].values()
     date_to_events = defaultdict(list)
     for e in events:
         date_to_events[e["start_date"].date()].append(e)
 
     country_to_events = group_by_country(events, session_state['id_to_geolocs'])
-
     people_to_events = group_by_entity(events, 'people')
     org_to_events = group_by_entity(events, 'organisations')
-
-    # TODO: group by category (i.e. category in story)
-    # TODO: session_state['visible_events']
-    # TODO: updated every time a checkbox is clicked
-    # TODO: don't make user click "Render"(?)
-    # TODO: remove facet-specific displays(?)
     category_to_events = group_by_category(events)
-
     facet_to_selected = defaultdict(list)
+
+    ###########################
+    # Facet Selection Columns #
+    ###########################
     date_col, loc_col, people_col, org_col, category_col = st.columns((1, 1, 1, 1, 1))
 
     date_col.write("### Dates")
     all_dates = date_col.checkbox("all / clear", key="all-dates")
-    idx = 0
-    for d in sorted(date_to_events):
+    for date_event_idx, d in enumerate(sorted(date_to_events)):
+        if date_event_idx > max_facets_in_category - 1:
+            break
         d_events = date_to_events[d]
         selected = date_col.checkbox(
             format_date(d) + f" ({len(d_events)} events)",
             value=all_dates,
-            key=str(idx)
+            key=f'date-event-checkbox-{date_event_idx}'
         )
-        idx += 1
         if selected:
             facet_to_selected[FACETS.DATE_FACET].append(d)
 
     loc_col.write("### Locations")
     all_locs = loc_col.checkbox("all / clear", key="all-locs")
     # TODO: configurable cutoff from sidebar for UX
-    for c, c_events in sorted(country_to_events.items(), key=lambda x: len(x[1]), reverse=True):
+    for loc_event_idx, (c, c_events) in enumerate(
+            sorted(country_to_events.items(), key=lambda x: len(x[1]), reverse=True)
+    ):
+        if loc_event_idx > max_facets_in_category - 1:
+            break
         selected = loc_col.checkbox(
             f"{c} ({len(c_events)} events)",
             value=all_locs,
-            key=f'locations-checkbox-{idx}'
+            key=f'location-event-checkbox-{loc_event_idx}'
         )
-        idx += 1
         if selected:
             facet_to_selected[FACETS.LOC_FACET].append(c)
 
     people_col.write("### People")
     all_people = people_col.checkbox("all / clear", key="all-people")
-    for e, e_events in sorted(
+    for people_event_idx, (e, e_events) in enumerate(sorted(
             people_to_events.items(),
             key=lambda x: len(x[1]),
             reverse=True
-    ):
+    )):
+        if people_event_idx > max_facets_in_category - 1:
+            break
         sf = e[1]
         selected = people_col.checkbox(
             f"{sf} ({len(e_events)} events)",
             value=all_people,
-            key=f'people-checkbox-{idx}'
+            key=f'people-event-checkbox-{people_event_idx}'
         )
-        idx += 1
         if selected:
             facet_to_selected[FACETS.PEOPLE_FACET].append(e)
 
     org_col.write("### Organisations")
     all_orgs = org_col.checkbox("all / clear", key="all-orgs")
-    for e, e_events in sorted(
-            org_to_events.items(), key=lambda x: len(x[1]), reverse=True):
+    for org_event_idx, (e, e_events) in enumerate(sorted(
+            org_to_events.items(), key=lambda x: len(x[1]), reverse=True)
+    ):
+        if org_event_idx > max_facets_in_category - 1:
+            break
         sf = e[1]
         selected = org_col.checkbox(
             f"{sf} ({len(e_events)} events)",
             value=all_orgs,
-            key=f'org-checkbox-{idx}'
+            key=f'org-event-checkbox-{org_event_idx}'
         )
-        idx += 1
         if selected:
             facet_to_selected[FACETS.ORG_FACET].append(e)
 
     category_col.write("### Categories")
     all_categories = category_col.checkbox("all / clear", key="all-categories")
-    for e, e_events in sorted(
+    for category_event_idx, (e, e_events) in enumerate(sorted(
             category_to_events.items(),
             key=lambda x: len(x[1]),
             reverse=True
-    ):
+    )):
+        if category_event_idx > max_facets_in_category - 1:
+            break
         selected = category_col.checkbox(
             f"{e} ({len(e_events)} events)",
             value=all_categories,
-            key=f'categories-checkbox-{idx}'
+            key=f'category-event-checkbox-{category_event_idx}'
         )
-        idx += 1
         if selected:
             facet_to_selected[FACETS.CATEGORY_FACET].append(e)
 
-    # date_col, loc_col, people_col, org_col = st.columns((1, 1, 1, 1))
     facet = None
     if date_col.button("View by date"):
         facet = FACETS.DATE_FACET
@@ -518,6 +514,7 @@ def group_by_entity(items, entity_field):
 
 
 def render_event_card(event, session_state):
+    max_ents_to_render = 6
     col1, col2 = st.columns([4, 2])
     col1.write(f'#### {event["title"]}')
     col1.write(f'{event["description"]}')
@@ -526,20 +523,20 @@ def render_event_card(event, session_state):
     )
     cols = st.columns(6)
     cols[0].write('### People')
-    for entity in event['people']:
+    for entity in event['people'][:max_ents_to_render]:
         cols[0].write(entity['surface_form'])
     cols[1].write('### Locations')
-    for entity in event['locations']:
+    for entity in event['locations'][:max_ents_to_render]:
         cols[1].write(entity['surface_form'])
     cols[2].write('### Organisations')
-    for entity in event['organisations']:
+    for entity in event['organisations'][:max_ents_to_render]:
         cols[2].write(entity['surface_form'])
     cols[3].write('### Categories')
-    for category in event['categories']:
+    for category in event['categories'][:max_ents_to_render]:
         cols[3].write(hash_category(category))
 
-    col1, col2 = st.columns(2)
-    with col1.expander('Stories'):
+    col1, col2 = st.columns([4, 2])
+    with col1.expander(f'Stories ({len(event["stories"])})'):
         for story in event['stories']:
             st.markdown(f'[{story["title"]}]({story["links"]["permalink"]})')
 

@@ -20,6 +20,7 @@ def get_session_state():
 def main():
     st.write("# Aylien NewsAPI Datascience Demos")
     st.write("#### Use the sidebar to navigate")
+    st.markdown("#### View code for demos [on Github](https://github.com/chrishokamp/aylien-datascience-demos)")
 
 
 if __name__ == '__main__':
