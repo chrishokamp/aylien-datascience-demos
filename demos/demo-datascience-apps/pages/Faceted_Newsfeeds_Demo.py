@@ -151,8 +151,6 @@ def render_sidebar(session_state):
     ###################################
     # Configure Input Streams/Sources #
     ###################################
-    st.sidebar.markdown('----')
-
     st.sidebar.markdown('### Select a Sample Feed')
     selected_feed = st.sidebar.radio(
         'Select an Example Feed',
