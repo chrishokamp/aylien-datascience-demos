@@ -12,7 +12,7 @@ This project is deployed on Streamlit Cloud, [check it out](https://aylienlabs.s
 
 ## NewsAPI patterns
 We also include some patterns that we re-use and modify regularly, such as a [simple interface to the NewsAPI](aylien_datascience_demos/newsapi.py) and
-and [Aylien Query Language](aylien_datascience_demos/aql_builder.py) generator. 
+an [Aylien Query Language](aylien_datascience_demos/aql_builder.py) generator. 
 
 ## Datascience Quickstarter Project
 Also check out our open source bootstrapper for projects and demos: [datascience-project-quickstarter](https://github.com/AYLIEN/datascience-project-quickstarter)
