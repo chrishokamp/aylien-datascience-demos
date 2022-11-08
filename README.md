@@ -8,6 +8,8 @@ or in making cool demos ;-).
 For each of these demos, we provide a sample dataset that will allow them to run without a NewsAPI key. If you have a NewsAPI key
 or a RADAR account, you can dynamically update the demos with new feed data.
 
+This project is deployed on Streamlit Cloud, [check it out](https://aylienlabs.streamlit.app).
+
 ## NewsAPI patterns
 We also include some patterns that we re-use and modify regularly, such as a simple interface to the 
 
