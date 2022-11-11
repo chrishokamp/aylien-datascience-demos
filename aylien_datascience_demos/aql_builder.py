@@ -65,7 +65,7 @@ def make_entities_aql(surface_forms, entity_ids, sentiment=None, min_prominence=
 
     ids_aql = ''
     if entity_ids is not None and len(entity_ids) > 0:
-        ids_aql = f': (' + ' '.join([f'"{entity_id}"' for entity_id in entity_ids]) + ')'
+        ids_aql = f' (' + ' '.join([f'id:{entity_id}' for entity_id in entity_ids]) + ')'
 
     entities_aql = ''
     if len(sfs_aql) or len(ids_aql):
